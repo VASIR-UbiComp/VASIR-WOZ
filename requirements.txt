@@ -1,0 +1,6 @@
+openai
+requests
+python-vlc
+whisper
+pyaudio
+python-dotenv

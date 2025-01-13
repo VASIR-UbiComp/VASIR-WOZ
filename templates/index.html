@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual Assistant</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  </head>
+  <body>
+    <h1>Virtual Assistant</h1>
+
+    <!-- Button for recording -->
+    <button id="record-button">Hold to Record</button>
+    <p id="recording-status"></p>
+
+    <!-- Editable transcription field -->
+    <div id="edit-transcription" style="display: none">
+      <p>Edit Transcription:</p>
+      <textarea id="transcription-text" rows="4" cols="50"></textarea>
+    </div>
+
+    <!-- Emotion selection -->
+    <div id="emotion-selection" style="display: none">
+      <p>Select Emotion:</p>
+      <select id="emotion-dropdown">
+        <option value="neutral">Neutral</option>
+        <option value="anger">Anger</option>
+        <option value="fear">Fear</option>
+        <option value="happiness">Happiness</option>
+        <option value="sadness">Sadness</option>
+        <option value="surprised">Surprised</option>
+      </select>
+      <button id="send-message">Send Message</button>
+    </div>
+
+    <!-- Response and audio playback -->
+    <p id="response-text"></p>
+    <audio id="response-audio" controls style="display: none"></audio>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+
+      // Start recording
+      $("#record-button").on("mousedown", function () {
+        $("#recording-status").text("Recording...");
+        audioChunks = [];
+        navigator.mediaDevices
+          .getUserMedia({ audio: true })
+          .then((stream) => {
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = (event) => {
+              audioChunks.push(event.data);
+            };
+            mediaRecorder.start();
+          })
+          .catch((error) => {
+            $("#recording-status").text(
+              "Error accessing microphone: " + error.message
+            );
+          });
+      });
+
+      // Stop recording and process audio
+      $("#record-button").on("mouseup", function () {
+        $("#recording-status").text("Recording stopped.");
+        mediaRecorder.stop();
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+          const formData = new FormData();
+          formData.append("file", audioBlob, "recorded_audio.wav");
+
+          // Send audio to backend for transcription
+          $.ajax({
+            url: "/process_audio",
+            method: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function (data) {
+              $("#recording-status").text("Transcribed Text: " + data.text);
+              $("#transcription-text").val(data.text);
+              $("#edit-transcription").show();
+              $("#emotion-selection").show();
+            },
+            error: function () {
+              $("#recording-status").text("Error during transcription.");
+            },
+          });
+        };
+      });
+
+      // Send message with emotion and process response
+      $("#send-message").on("click", function () {
+        const text = $("#transcription-text").val().trim();
+        const emotion = $("#emotion-dropdown").val();
+
+        if (text) {
+          $.ajax({
+            url: "/send_message",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify({ text, emotion }),
+            success: function (data) {
+              if (data.response) {
+                $("#response-text").text("Response: " + data.response);
+
+                if (data.audio_path) {
+                  const audioElement = $("#response-audio");
+                  audioElement[0].pause();
+                  audioElement[0].currentTime = 0;
+                  audioElement.attr("src", "");
+                  audioElement.attr("src", `/audio/${data.audio_path}`);
+                  audioElement.show();
+                  audioElement[0].play();
+                }
+              } else {
+                $("#response-text").text("Error: " + data.error);
+              }
+            },
+            error: function () {
+              $("#response-text").text("Error during message processing.");
+            },
+          });
+        } else {
+          alert("No text transcribed to send.");
+        }
+      });
+    </script>
+  </body>
+</html>
